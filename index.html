@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>DISE — SignageOS Google Provisioning</title>
+<link rel="icon" href="data:,">
+<style>
+  /* Minimalistic styling: white background, black text, single accent color */
+  :root{
+    --accent:#ff4b5c; /* vibrant accent */
+    --bg:#ffffff;
+    --fg:#0a0a0a;
+    --muted:#666;
+    --radius:10px;
+    --shadow: 0 6px 20px rgba(10,10,10,0.06);
+  }
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial;}
+  .wrap{max-width:860px;margin:56px auto;padding:28px;border-radius:12px;box-shadow:var(--shadow);}
+  h1{margin:0 0 8px;font-size:20px;}
+  p.lead{margin:0 0 18px;color:var(--muted);}
+  .card{background:#fff;border-radius:12px;padding:18px;margin-bottom:16px;border:1px solid rgba(0,0,0,0.04);}
+  label.select{display:block;margin-bottom:8px;font-weight:600;font-size:13px}
+  .row{display:flex;gap:12px;align-items:center;}
+  .radio{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+  input[type="text"], input[type="email"]{width:100%;padding:10px;border-radius:8px;border:1px solid #e6e6e6;font-size:14px;}
+  button{background:var(--accent);color:#fff;border:none;padding:10px 14px;border-radius:10px;font-weight:600;cursor:pointer;transition:transform .12s ease,box-shadow .12s;}
+  button.secondary{background:#111;color:#fff;opacity:.95}
+  button:active{transform:translateY(1px)}
+  .muted{color:var(--muted);font-size:13px}
+  pre{background:#fafafa;padding:12px;border-radius:8px;overflow:auto;font-size:13px}
+  .small{font-size:13px;color:var(--muted)}
+  .success{border-left:4px solid #2ecc71;padding-left:12px}
+  .danger{border-left:4px solid #ff4b5c;padding-left:12px}
+  .actions{display:flex;gap:10px;margin-top:12px;align-items:center}
+  footer{margin-top:18px;font-size:13px;color:var(--muted)}
+  /* micro interactions */
+  .loading{display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);border-top-color:rgba(255,255,255,0.9);animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  /* responsive */
+  @media (max-width:600px){.row{flex-direction:column}}
+</style>
+</head>
+<body>
+  <div class="wrap card">
+    <h1>DISE — SignageOS Google provisioning</h1>
+    <p class="lead">Get Workspace <strong>Customer ID</strong> and a Service Account JSON key for SignageOS provisioning. Hosted for development at <span id="origin"></span>.</p>
+
+    <div class="card">
+      <label class="select">Choose flow</label>
+      <div class="radio">
+        <input type="radio" id="variantA" name="variant" value="A" checked>
+        <label for="variantA">Variant A — Create service account & key (recommended)</label>
+      </div>
+      <div class="radio">
+        <input type="radio" id="variantB" name="variant" value="B">
+        <label for="variantB">Variant B — Use existing service account (enter its email)</label>
+      </div>
+
+      <div id="existingSA" style="display:none;margin-top:12px">
+        <label class="select">Existing service account email</label>
+        <input id="saEmail" placeholder="service-account@PROJECT.iam.gserviceaccount.com" />
+        <div class="small">Enter the full service account email (example shown).</div>
+      </div>
+
+      <div style="margin-top:12px">
+        <label class="select">Support email (recipient)</label>
+        <input id="supportEmail" type="email" value="support@dise.com" />
+        <div class="small">This will be prefilled when opening your mail client.</div>
+      </div>
+
+      <div style="margin-top:12px">
+        <label class="select">Google OAuth Client ID</label>
+        <input id="clientId" placeholder="Paste your OAuth Client ID here (created in Google Cloud Console)" />
+        <div class="small">Must be a Web application client ID. Authorized JS origin must include this page’s origin.</div>
+      </div>
+
+      <div class="actions">
+        <button id="startBtn">Authenticate & Run</button>
+        <button id="clearBtn" class="secondary">Clear output</button>
+      </div>
+
+      <div id="status" style="margin-top:12px"></div>
+    </div>
+
+    <div id="resultCard" class="card" style="display:none">
+      <div id="resultBox"></div>
+      <div style="margin-top:12px" class="actions">
+        <button id="mailBtn">Open mail client to send results</button>
+        <button id="downloadBtn" class="secondary">Download JSON key</button>
+      </div>
+      <div style="margin-top:12px" class="small">Note: the mail button opens your local mail client with the Customer ID and JSON key in the body. You can edit before sending. For automated server uploads, replace this with a secure POST later.</div>
+    </div>
+
+    <footer>Minimal UI — v1 (dev). Do not share generated keys insecurely.</footer>
+  </div>
+
+<script>
+/*
+  DISE SignageOS provisioning client
+  - Uses Google Identity Services (GIS) to obtain access tokens (popup token flow)
+  - Uses gapi.client to call Admin SDK (customers.get) and IAM API (create service account / create key)
+  - IMPORTANT: Replace YOUR_OAUTH_CLIENT_ID_HERE with your OAuth client ID in the page or paste it in the UI.
+*/
+
+const originDisplay = document.getElementById('origin');
+originDisplay.textContent = location.origin + location.pathname.replace(/\/[^\/]*$/, '/') ;
+
+const variantEls = document.getElementsByName('variant');
+const existingSAdiv = document.getElementById('existingSA');
+const saEmailInput = document.getElementById('saEmail');
+const clientIdInput = document.getElementById('clientId');
+const supportEmailInput = document.getElementById('supportEmail');
+
+for (const r of variantEls) {
+  r.addEventListener('change', ()=> {
+    existingSAdiv.style.display = (document.getElementById('variantB').checked ? 'block' : 'none');
+  });
+}
+
+// default (optional) client id placeholder for dev convenience (replace or paste real one)
+const DEFAULT_CLIENT_ID = 'YOUR_OAUTH_CLIENT_ID_HERE';
+clientIdInput.value = DEFAULT_CLIENT_ID;
+
+let tokenClient = null;
+let gapiLoaded = false;
+let accessToken = null;
+let lastKeyJson = null;
+let lastCustomerId = null;
+let lastSaEmail = null;
+let lastFilename = null;
+
+const SCOPES = [
+  'https://www.googleapis.com/auth/admin.directory.customer.readonly',
+  'https://www.googleapis.com/auth/iam'
+];
+
+function setStatus(html, isError=false) {
+  const s = document.getElementById('status');
+  s.innerHTML = html;
+  s.className = isError ? 'danger' : '';
+}
+
+function showResultBox(html) {
+  const rc = document.getElementById('resultCard');
+  rc.style.display = 'block';
+  document.getElementById('resultBox').innerHTML = html;
+}
+
+function clearResults(){
+  document.getElementById('resultCard').style.display = 'none';
+  document.getElementById('resultBox').innerHTML = '';
+  setStatus('');
+  lastKeyJson = null;
+  lastCustomerId = null;
+  lastSaEmail = null;
+  lastFilename = null;
+}
+
+document.getElementById('clearBtn').addEventListener('click', clearResults);
+
+async function loadGapiClient(){
+  if(gapiLoaded) return;
+  // Load gapi script
+  await new Promise((res,rej)=>{
+    const s = document.createElement('script');
+    s.src = 'https://apis.google.com/js/api.js';
+    s.onload = res;
+    s.onerror = rej;
+    document.head.appendChild(s);
+  });
+  // init gapi
+  await new Promise((res)=> gapi.load('client', res));
+  gapiLoaded = true;
+}
+
+async function initTokenClient(clientId){
+  // load GIS script
+  if(!window.google || !google.accounts || !google.accounts.oauth2){
+    await new Promise((res,rej)=>{
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.onload = res;
+      s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: SCOPES.join(' '),
+    callback: (tokenResponse) => {
+      // will be set up when we request token
+      /* tokenResponse: {access_token, expires_in, scope, token_type} */
+      accessToken = tokenResponse && tokenResponse.access_token;
+      // set token for gapi
+      if(accessToken && gapi && gapi.client) {
+        gapi.client.setToken({access_token: accessToken});
+      }
+      setStatus('Authenticated ✓');
+    }
+  });
+}
+
+async function requestAccessToken(){
+  return new Promise((resolve,reject)=>{
+    if(!tokenClient) return reject(new Error('token client not initialized'));
+    setStatus('<span class="loading"></span> Opening Google sign-in...');
+    tokenClient.requestAccessToken({prompt: 'consent'}); // popup; callback sets accessToken
+    // Wait for gapi.client to have token set
+    const t0 = Date.now();
+    const int = setInterval(()=>{
+      if(accessToken){
+        clearInterval(int);
+        resolve(accessToken);
+      } else if(Date.now() - t0 > 60_000){
+        clearInterval(int);
+        reject(new Error('Timeout waiting for token'));
+      }
+    },300);
+  });
+}
+
+async function callAdminGetCustomer(){
+  // Using gapi.client for Admin SDK Directory API:
+  // GET https://admin.googleapis.com/admin/directory/v1/customers/my_customer
+  try {
+    const res = await gapi.client.request({
+      path: 'https://admin.googleapis.com/admin/directory/v1/customers/my_customer',
+      method: 'GET',
+    });
+    return res.result; // includes id (customerId)
+  } catch(e){
+    throw e;
+  }
+}
+
+async function createServiceAccount(projectId, accountId, displayName){
+  // POST https://iam.googleapis.com/v1/projects/{projectId}/serviceAccounts
+  const parent = `projects/${projectId}`;
+  const body = {
+    accountId: accountId,
+    serviceAccount: {displayName: displayName}
+  };
+  const res = await gapi.client.request({
+    path: `https://iam.googleapis.com/v1/${parent}/serviceAccounts`,
+    method: 'POST',
+    body: body
+  });
+  return res.result; // contains email etc
+}
+
+async function createServiceAccountKey(saEmail){
+  // POST https://iam.googleapis.com/v1/projects/-/serviceAccounts/{sa-email}:keys
+  // Request body: {privateKeyType: 'TYPE_GOOGLE_CREDENTIALS_FILE'}
+  const name = `projects/-/serviceAccounts/${encodeURIComponent(saEmail)}`;
+  const body = {
+    privateKeyType: 'TYPE_GOOGLE_CREDENTIALS_FILE'
+  };
+  const res = await gapi.client.request({
+    path: `https://iam.googleapis.com/v1/${name}/keys`,
+    method: 'POST',
+    body: body
+  });
+  return res.result; // includes privateKeyData (base64)
+}
+
+function b64ToUtf8(b64){
+  try {
+    return decodeURIComponent(escape(atob(b64)));
+  } catch(e){ // fallback
+    return atob(b64);
+  }
+}
+
+document.getElementById('startBtn').addEventListener('click', async ()=>{
+  clearResults();
+  const clientId = (clientIdInput.value || '').trim();
+  if(!clientId || clientId === 'YOUR_OAUTH_CLIENT_ID_HERE'){
+    setStatus('Please paste your OAuth Client ID in the input above.', true);
+    return;
+  }
+  const supportEmail = (supportEmailInput.value || '').trim();
+  const variant = document.getElementById('variantB').checked ? 'B' : 'A';
+  const existingSa = (saEmailInput.value || '').trim();
+  try {
+    setStatus('Loading libraries...');
+    await loadGapiClient();
+    await initTokenClient(clientId);
+    setStatus('Requesting permissions → please sign in in the popup...');
+    await requestAccessToken();
+    // initialize gapi client services (no API key required when using OAuth)
+    await gapi.client.load('https://content.googleapis.com/discovery/v1/apis/admin/directory_v1/rest');
+    await gapi.client.load('https://content.googleapis.com/discovery/v1/apis/iam/v1/rest');
+    setStatus('Fetching Workspace Customer ID...');
+    const cust = await callAdminGetCustomer();
+    const customerId = cust && (cust.id || cust.customerId || cust['id']);
+    lastCustomerId = customerId;
+    setStatus('Customer ID obtained: ' + customerId);
+    // Determine project: For creating service accounts we need a project id
+    // For convenience, ask user for projectId via prompt (could be added as input)
+    let projectId = null;
+    if(variant === 'A'){
+      projectId = window.prompt('Enter the Google Cloud project ID in which to create the service account (example: my-project-id):');
+      if(!projectId){ throw new Error('Project ID required to create a service account.')}
+    }
+    let saEmail = existingSa || null;
+    if(variant === 'A'){
+      setStatus('Creating service account in project ' + projectId + ' ...');
+      // Create an accountId value that's valid: lowercase letters, digits, and hyphens
+      const rand = Math.random().toString(36).slice(2,8);
+      const accountId = `signageos-${rand}`;
+      const displayName = 'SignageOS integration';
+      const sa = await createServiceAccount(projectId, accountId, displayName);
+      saEmail = sa.email;
+      lastSaEmail = saEmail;
+      setStatus('Service account created: ' + saEmail + ' — creating key ...');
+    } else {
+      if(!saEmail) throw new Error('Please provide the existing service account email before running Variant B.');
+      setStatus('Using existing service account: ' + saEmail + ' — creating key ...');
+    }
+    // Create key
+    const keyResp = await createServiceAccountKey(saEmail);
+    const keyDataB64 = keyResp.privateKeyData;
+    const keyJson = b64ToUtf8(keyDataB64);
+    lastKeyJson = keyJson;
+    // Prepare filename
+    lastFilename = (saEmail || 'service-account').replace(/[@\/]/g,'_') + '-key.json';
+    // Show to user
+    const pretty = `<div class="success"><strong>Customer ID:</strong> ${customerId}<br><strong>Service account:</strong> ${saEmail}</div>
+    <h4 style="margin-top:12px">Private key (JSON)</h4>
+    <pre id="keyPre">${escapeHtml(keyJson)}</pre>
+    <div class="small" style="margin-top:8px">Download the file or click 'Open mail client' to send to support@dise.com</div>`;
+    showResultBox(pretty);
+    setStatus('Success — generated key. Be careful with the private key (do not leak).');
+  } catch(err){
+    console.error(err);
+    setStatus('Error: ' + (err.message || err.toString()), true);
+  }
+});
+
+function escapeHtml(s){ return (s+'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+document.getElementById('downloadBtn').addEventListener('click', ()=>{
+  if(!lastKeyJson) return alert('No key available');
+  const blob = new Blob([lastKeyJson], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = lastFilename || 'service-account-key.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('mailBtn').addEventListener('click', ()=>{
+  const to = encodeURIComponent((supportEmailInput.value||'support@dise.com').trim());
+  const subject = encodeURIComponent('SignageOS provisioning - Customer ID & Service Account Key');
+  let body = `Hello%0A%0APlease find the Customer ID and service account key below.%0A%0ACustomer ID: ${encodeURIComponent(lastCustomerId || '(missing)')}%0AService account: ${encodeURIComponent(lastSaEmail || '(missing)')}%0A%0APrivate key (JSON):%0A%0A`;
+  if(lastKeyJson){
+    // Encode full JSON in body (careful about length, mail clients may truncate very large bodies)
+    body += encodeURIComponent(lastKeyJson) + '%0A%0A';
+  } else {
+    body += encodeURIComponent('(no key data)') + '%0A%0A';
+  }
+  body += encodeURIComponent('Sent from DISE provisioning tool.');
+  const mailto = `mailto:${to}?subject=${subject}&body=${body}`;
+  // open mail client
+  window.location.href = mailto;
+});
+
+// Optional: show a short tip if the clientId field is changed
+clientIdInput.addEventListener('input', ()=>{
+  // Nothing fancy — but we re-init token client on run with provided id
+});
+
+</script>
+</body>
+</html>
