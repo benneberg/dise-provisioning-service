@@ -1,0 +1,83 @@
+How to set up the oAuth Client ID for this app
+
+Part 1: Create an OAuth Client ID
+
+Go to the Google Cloud Console
+
+https://console.cloud.google.com/
+
+Select or create a project
+
+At the top left, click the project dropdown.
+
+Choose an existing project or click “New Project” to make a new one.
+
+Go to the OAuth consent screen
+
+Left menu → APIs & Services → OAuth consent screen
+
+Choose External (if you’ll be using Google accounts outside your organization).
+
+Fill in:
+
+App name: e.g. “Benneberg GitHub App”
+
+User support email
+
+Developer contact info
+
+Save and continue through scopes and test users (you can skip adding scopes now).
+
+Submit for verification (if needed later).
+
+Create OAuth client credentials
+
+Left menu → APIs & Services → Credentials
+
+Click + Create Credentials → OAuth client ID
+
+Choose:
+
+Application type: Web application
+
+Name: something descriptive (e.g. “GitHub Pages Auth”)
+
+Authorized JavaScript origins:
+
+https://benneberg.github.io
+
+
+Authorized redirect URIs:
+You can add a callback path for your app, for example:
+
+https://benneberg.github.io/<your-repo-name>/oauth2callback
+
+
+Replace <your-repo-name> with the actual path of your GitHub Pages repo (e.g. /myapp).
+
+Click Create.
+
+Copy the credentials
+
+You’ll get a Client ID (and optionally a Client Secret).
+
+Keep these — you’ll need them in your app’s config or .env file.
+
+⚙️ Part 2: Enable the Required APIs
+
+Go to APIs & Services → Library
+
+Search and enable each of the following:
+
+Admin SDK API
+
+IAM API
+
+(Just click into each, then click the blue Enable button.)
+
+✅ Summary
+Step	Action	Location
+1	Create OAuth client	Google Cloud Console → Credentials
+2	Add origin https://benneberg.github.io	Authorized JS origins
+3	Add redirect URI	https://benneberg.github.io/<repo>/oauth2callback
+4	Enable APIs	Admin SDK, IAM
