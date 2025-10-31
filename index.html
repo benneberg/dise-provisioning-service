@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>DISE — SignageOS Google Provisioning</title>
+<title>DISE — Provisioning Service</title>
 <link rel="icon" href="data:,">
 <style>
   /* Minimalistic styling: white background, black text, single accent color */
@@ -43,18 +43,22 @@
 </head>
 <body>
   <div class="wrap card">
-    <h1>DISE — SignageOS Google provisioning</h1>
-    <p class="lead">Get Workspace <strong>Customer ID</strong> and a Service Account JSON key for SignageOS provisioning. Hosted for development at <span id="origin"></span>.</p>
+    <h1>DISE — Provisioning Service</h1>
+    
+    <p class="lead">This tool will automatic get your Google workspace <strong>Customer ID</strong> and a Service Account JSON key for SignageOS provisioning. <br>
+      <b>Select one of the options and you will be prompted to authorize this generation by using your admin Google account</b>
+      Temporarily hosted for development at <span id="origin"></span>.</p>
 
     <div class="card">
+      <h2>Google ChromeOS Provisioning for SignageOS</h2>
       <label class="select">Choose flow</label>
       <div class="radio">
         <input type="radio" id="variantA" name="variant" value="A" checked>
-        <label for="variantA">Variant A — Create service account & key (recommended)</label>
+        <label for="variantA">Option A — Creates a new service account & key (recommended)</label>
       </div>
       <div class="radio">
         <input type="radio" id="variantB" name="variant" value="B">
-        <label for="variantB">Variant B — Use existing service account (enter its email)</label>
+        <label for="variantB">Option B — Use existing service account (enter its email)</label>
       </div>
 
       <div id="existingSA" style="display:none;margin-top:12px">
