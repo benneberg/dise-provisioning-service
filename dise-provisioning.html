@@ -113,7 +113,7 @@
   <!-- Overlay for closing sidebar -->
   <div id="sidebarOverlay" class="overlay fixed inset-0 bg-black bg-opacity-50 opacity-0 pointer-events-none transition-opacity" onclick="toggleMenu(false)"></div>
 
-  <div class="wrap min-h-screen w-full p-4 sm:p-8 flex flex-col items-center">
+  <div class="wrap min-h-screen w-full max-w-7xl mx-auto p-4 sm:p-8 flex flex-col items-center">
 
     <header class="flex w-full max-w-4xl items-center gap-4 py-4">
       <!-- Menu Toggle Button -->
@@ -208,7 +208,7 @@
                 <p>You must run this script using a **Google Workspace Super Admin** account, either in the Google Cloud Shell or a local <code class="text-accent-light">gcloud</code> CLI.</p>
                 
                 <h4 class="text-white mt-4">Why use this script?</h4>
-                <p>Manually configuring Google's services for ChromeOS management is complex and error-prone. This script automates all possible steps and provides clear instructions for the required manual steps.</p>
+                <p>Manually configuring Google's services for ChromeOS management is complex and error-prone. This script automates all possible steps and provides clear instructions for the **two required manual steps**: Domain-Wide Delegation and Admin Role Privileges.</p>
                 
                 <h4 class="text-white mt-4">What it does</h4>
                 <ul>
@@ -216,8 +216,10 @@
                   <li>Enables the required APIs (Admin SDK, Chrome Management, IAM).</li>
                   <li>Creates a new Service Account.</li>
                   <li>Generates and downloads a JSON key for that account.</li>
-                  <li>Provides you with the **Customer ID**, **Service Account Client ID**, and the **exact manual steps** to complete Domain-Wide Delegation in your Admin Console.</li>
+                  <li>Provides you with the **Customer ID**, **Service Account Client ID**, and the **exact manual steps** to complete Domain-Wide Delegation and set **Admin Role Privileges** in your Admin Console.</li>
                 </ul>
+                <h4 class="text-white mt-4">Review Notes (2025-03-11)</h4>
+                <p>The script has been reviewed and verified. All <code class="text-accent-light">gcloud</code> commands, API enablement steps, and OAuth scopes are current and correct for enabling ChromeOS device management via the Admin SDK and Chrome Management API.</p>
               </div>
             </div>
           </div>
@@ -271,9 +273,39 @@ function showToast(type, text, opts = {}) {
   return el;
 }
 
-/* Copy helper */
-async function copyText(t) {
-  try { await navigator.clipboard.writeText(t); showToast('success', 'Copied to clipboard'); } catch (e) { showToast('error', 'Copy failed'); }
+/**
+ * Copy helper using document.execCommand for better iframe reliability.
+ * @param {string} text The text content to copy.
+ */
+function copyText(text) {
+  try {
+    const tempElement = document.createElement('textarea');
+    tempElement.value = text;
+    // Set styles to make it invisible but selectable
+    tempElement.setAttribute('readonly', '');
+    tempElement.style.position = 'absolute';
+    tempElement.style.left = '-9999px';
+    document.body.appendChild(tempElement);
+    
+    // Select the text field contents
+    tempElement.select();
+    
+    // Attempt the copy command
+    const success = document.execCommand('copy');
+    
+    document.body.removeChild(tempElement);
+
+    if (success) {
+        showToast('success', 'Copied to clipboard');
+    } else {
+        throw new Error('execCommand failed');
+    }
+    
+  } catch (e) { 
+      console.error("Copy failed via execCommand:", e);
+      // Fallback message
+      showToast('error', 'Copy failed. Try manually selecting the script text.');
+  }
 }
 
 /* -------------------------
@@ -313,7 +345,7 @@ function switchTab(tabId, clickedButton) {
 
 function router() {
     let hash = window.location.hash.substring(1) || 'home';
-    // FIX: The page ID must exactly match "page-" + hash, including hyphens.
+    // The page ID must exactly match "page-" + hash, including hyphens.
     const pageId = `page-${hash}`; 
     
     // 1. Handle Content Visibility
@@ -447,8 +479,8 @@ document.addEventListener('DOMContentLoaded', () => {
 # 2. Enable the required APIs.
 # 3. Create a Service Account.
 # 4. Download a JSON key for that account.
-# 5. Output the values you need for the **mandatory manual steps**
-#    (Domain-Wide Delegation in your Google Workspace Admin Console).
+# 5. Output the values you need for the **two mandatory manual steps**
+#    (Domain-Wide Delegation and Admin Role Privileges).
 
 set -e
 echo "--- DISE/signageOS Provisioning Script ---"
@@ -520,7 +552,10 @@ fi
 echo "--- SCRIPT FINISHED ---"
 echo ""
 echo "--- ⚠️ REQUIRED MANUAL STEPS ---"
-echo "The script has finished. You MUST now complete these manual steps in your Google Workspace Admin Console."
+echo "The script has finished. You MUST now complete these two manual steps in your Google Workspace Admin Console to finalize setup."
+echo ""
+echo "--- 1. DOMAIN-WIDE DELEGATION (DWD) ---"
+echo "DWD authorizes the Service Account to access user data. You must delegate authority to a user who has the necessary ChromeOS Admin Role privileges (see Step 2)."
 echo ""
 echo "1. Go to: https://admin.google.com"
 echo "2. Navigate to: Security > Access and data control > API Controls > Domain-wide Delegation"
@@ -532,6 +567,17 @@ echo "5. For 'OAuth scopes', paste the following text (comma-separated):"
 echo "   https://www.googleapis.com/auth/admin.directory.device.chromeos,https://www.googleapis.com/auth/admin.directory.orgunit,https://www.googleapis.com/auth/chromemanagement.appdetails"
 echo ""
 echo "6. Click 'Authorize'."
+echo ""
+echo "--- 2. ADMIN ROLE PRIVILEGES ---"
+echo "You must ensure the user whose email you will use for DWD (the delegate user) has the required privileges to manage ChromeOS devices."
+echo ""
+echo "1. In the Admin Console, navigate to: Account -> Admin roles."
+echo "2. Edit an existing role (e.g., a custom role) or create a new one, and assign it to your chosen delegate user."
+echo "3. Under 'Privileges', ensure the following options are CHECKED under the 'Chrome management' section:"
+echo "   - Manage User Settings"
+echo "   - Manage ChromeOS Devices"
+echo "   - Manage ChromeOS Device Settings"
+echo "   - View Reports"
 echo ""
 echo "--- PROVISIONING COMPLETE ---"
 echo "You can now use the following details for your signageOS setup:"
